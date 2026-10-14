@@ -10,18 +10,14 @@ Dataset : MovieLens 100K - https://grouplens.org/datasets/movielens/
 import io
 import os
 import random
-import zipfile
 import urllib.request
+import zipfile
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics.pairwise import cosine_similarity
-
-# ──────────────────────────────────────────────
-# Konstanta
-# ──────────────────────────────────────────────
 
 DATA_DIR = "ml-100k"
 
@@ -31,22 +27,16 @@ GENRE_COLS = [
     'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'
 ]
 
-# Label kolom untuk file u.item (total 24 kolom)
 MOVIE_COLUMNS = (
     ['movie_id', 'title', 'release_date', 'video_release_date', 'IMDb_URL']
     + ['unknown'] + GENRE_COLS
 )
 
-# ══════════════════════════════════════════════
-# BAGIAN 1 — DATA COLLECTING
-# ══════════════════════════════════════════════
+
+# --- 1. Data Collecting ---
 
 def load_ratings(data_dir: str = DATA_DIR) -> pd.DataFrame:
-    """
-    Membaca file u.data dan mengembalikan DataFrame ratings.
-
-    Kolom: user_id, item_id, rating, timestamp
-    """
+    """Membaca file u.data dan mengembalikan DataFrame ratings."""
     path = os.path.join(data_dir, "u.data")
     ratings = pd.read_csv(
         path,
@@ -58,12 +48,7 @@ def load_ratings(data_dir: str = DATA_DIR) -> pd.DataFrame:
 
 
 def load_movies(data_dir: str = DATA_DIR) -> pd.DataFrame:
-    """
-    Membaca file u.item, menghapus kolom yang tidak diperlukan,
-    dan mengembalikan DataFrame movies.
-
-    Kolom yang dihapus: release_date, video_release_date, IMDb_URL, unknown
-    """
+    """Membaca file u.item dan mengembalikan DataFrame metadata film."""
     path = os.path.join(data_dir, "u.item")
     movies = pd.read_csv(
         path,
@@ -72,11 +57,9 @@ def load_movies(data_dir: str = DATA_DIR) -> pd.DataFrame:
         names=MOVIE_COLUMNS,
         usecols=range(24)
     )
-    # Hapus kolom yang tidak diperlukan untuk rekomendasi berbasis genre
     movies = movies.drop(
         columns=['release_date', 'video_release_date', 'IMDb_URL', 'unknown']
     )
-    # Sesuaikan nama kolom agar cocok dengan ratings
     movies.rename(columns={'movie_id': 'item_id'}, inplace=True)
     return movies
 
@@ -87,16 +70,10 @@ def download_and_extract_data(data_dir: str = DATA_DIR):
         print(f"Dataset tidak ditemukan di {data_dir}. Mengunduh...")
         url = "https://files.grouplens.org/datasets/movielens/ml-100k.zip"
         zip_path = "ml-100k.zip"
-        
         try:
-            # Download zip
             urllib.request.urlretrieve(url, zip_path)
-            
-            # Extract zip
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(".")
-            
-            # Hapus zip setelah extract
             os.remove(zip_path)
             print("Dataset berhasil diunduh dan diekstrak.")
         except Exception as e:
@@ -105,38 +82,25 @@ def download_and_extract_data(data_dir: str = DATA_DIR):
 
 
 def load_data(data_dir: str = DATA_DIR) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Memuat semua data dan menggabungkan ratings + movies berdasarkan item_id.
-
-    Returns:
-        ratings  : DataFrame rating pengguna (100.000 baris)
-        movies   : DataFrame metadata film (1.682 baris)
-        df       : DataFrame gabungan ratings + movies (100.000 baris, 23 kolom)
-    """
+    """Memuat semua data dan menggabungkan ratings + movies berdasarkan item_id."""
     download_and_extract_data(data_dir)
     ratings = load_ratings(data_dir)
     movies  = load_movies(data_dir)
-    # Gabungkan ratings dan movies berdasarkan item_id
     df      = pd.merge(ratings, movies, on="item_id")
     return ratings, movies, df
 
 
-# ══════════════════════════════════════════════
-# BAGIAN 2 — DATA EXPLORING
-# ══════════════════════════════════════════════
+# --- 2. Data Exploring ---
 
 def get_data_info(df: pd.DataFrame) -> str:
-    """
-    Mengembalikan output df.info() sebagai string
-    (berguna untuk ditampilkan di Streamlit).
-    """
+    """Mengembalikan output df.info() sebagai string."""
     buf = io.StringIO()
     df.info(buf=buf)
     return buf.getvalue()
 
 
 def get_data_shape(df: pd.DataFrame) -> dict:
-    """Mengembalikan dict berisi banyak baris, kolom, numerik, dan kategorikal."""
+    """Mengembalikan dict ringkasan dimensi baris dan kolom."""
     numeric_cols    = df.select_dtypes(include='number').columns.tolist()
     categorical_cols = df.select_dtypes(include='object').columns.tolist()
     return {
@@ -150,7 +114,7 @@ def get_data_shape(df: pd.DataFrame) -> dict:
 
 
 def get_nunique_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Mengembalikan DataFrame berisi banyak nilai unik tiap kolom."""
+    """Mengembalikan DataFrame berisi jumlah nilai unik tiap kolom."""
     return (
         pd.DataFrame({
             "Kolom"         : df.columns,
@@ -162,10 +126,7 @@ def get_nunique_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_duplicate_titles(movies: pd.DataFrame) -> pd.DataFrame:
-    """
-    Mengembalikan baris-baris movies yang memiliki duplikasi pada kolom title.
-    Diidentifikasi: item_id berbeda, title sama.
-    """
+    """Mengembalikan data film yang memiliki judul sama dengan item_id berbeda."""
     dupes = (
         movies[movies.duplicated(subset=['title'], keep=False)]
         .sort_values('title')[['item_id', 'title']]
@@ -175,16 +136,13 @@ def get_duplicate_titles(movies: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_rating_value_counts(ratings: pd.DataFrame) -> pd.DataFrame:
-    """Mengembalikan distribusi frekuensi rating."""
+    """Mengembalikan distribusi frekuensi nilai rating."""
     vc = ratings['rating'].value_counts().sort_index()
     return pd.DataFrame({"Rating": vc.index, "Jumlah": vc.values})
 
 
 def get_top_rated_movies(ratings: pd.DataFrame, movies: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
-    """
-    Mengembalikan DataFrame berisi N film yang paling banyak dirating,
-    beserta rata-rata rating-nya.
-    """
+    """Mengembalikan top-N film yang paling banyak dirating beserta rata-ratanya."""
     result = (
         ratings.merge(movies[['item_id', 'title']], on='item_id')
         .groupby('title')
@@ -202,21 +160,14 @@ def get_top_rated_movies(ratings: pd.DataFrame, movies: pd.DataFrame, top_n: int
 
 
 def get_genre_counts(movies: pd.DataFrame) -> pd.Series:
-    """Menghitung jumlah film per genre, diurutkan dari terbanyak."""
+    """Menghitung total film per genre, diurutkan secara menurun."""
     return movies[GENRE_COLS].sum().sort_values(ascending=False)
 
 
-# ══════════════════════════════════════════════
-# BAGIAN 3 — DATA PREPARATION
-# ══════════════════════════════════════════════
+# --- 3. Data Preparation ---
 
 def check_missing_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Memeriksa missing value pada setiap kolom.
-
-    Returns:
-        DataFrame berisi kolom, jumlah missing, dan persentase missing.
-    """
+    """Memeriksa jumlah dan persentase missing value pada setiap kolom."""
     missing = df.isnull().sum()
     pct     = (missing / len(df) * 100).round(2)
     result  = pd.DataFrame({
@@ -233,12 +184,7 @@ def check_duplicates(df: pd.DataFrame) -> int:
 
 
 def build_movie_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Membangun item profile: setiap film unik sebagai baris,
-    setiap genre sebagai kolom biner.
-
-    Duplikasi judul dihapus; title dijadikan index.
-    """
+    """Membangun item profile biner (title x genre) setelah menghapus duplikasi judul."""
     movie_features = (
         df[['title'] + GENRE_COLS]
         .drop_duplicates(subset=['title'])
@@ -247,37 +193,20 @@ def build_movie_features(df: pd.DataFrame) -> pd.DataFrame:
     return movie_features
 
 
-# ══════════════════════════════════════════════
-# BAGIAN 4 — MODEL DEVELOPMENT
-# ══════════════════════════════════════════════
+# --- 4. Model Development ---
 
 def build_cosine_similarity(movie_features: pd.DataFrame) -> pd.DataFrame:
-    """
-    Menghitung cosine similarity antar film berdasarkan profil genre.
-
-    Formula: cos(A, B) = (A · B) / (‖A‖ × ‖B‖)
-    Nilai 0 = tidak mirip, nilai 1 = genre identik sempurna.
-    """
+    """Menghitung matriks cosine similarity antar film berdasarkan profil genre."""
     cosine_sim = cosine_similarity(movie_features)
-    cosine_sim_df = pd.DataFrame(
+    return pd.DataFrame(
         cosine_sim,
-        index   =movie_features.index,
-        columns =movie_features.index
+        index=movie_features.index,
+        columns=movie_features.index
     )
-    return cosine_sim_df
 
 
 def build_model(data_dir: str = DATA_DIR) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Pipeline lengkap: load data → eksplorasi → persiapan → build model.
-
-    Returns:
-        ratings        : DataFrame rating pengguna
-        movies         : DataFrame metadata film
-        df             : DataFrame gabungan
-        movie_features : item profile (title × genre)
-        cosine_sim_df  : cosine similarity matrix
-    """
+    """Pipeline pemrosesan data hingga pembentukan matriks similarity."""
     ratings, movies, df = load_data(data_dir)
     movie_features = build_movie_features(df)
     cosine_sim_df  = build_cosine_similarity(movie_features)
@@ -289,33 +218,20 @@ def recommend_movies(
     cosine_sim_df: pd.DataFrame,
     top_n: int = 5
 ) -> list[str] | str:
-    """
-    Merekomendasikan film yang mirip berdasarkan cosine similarity genre.
-
-    Args:
-        title         : Judul film referensi
-        cosine_sim_df : Matriks cosine similarity
-        top_n         : Jumlah rekomendasi yang dikembalikan
-
-    Returns:
-        List judul film (top_n), atau string pesan error jika tidak ditemukan.
-    """
+    """Merekomendasikan top-N film yang mirip berdasarkan cosine similarity genre."""
     if title not in cosine_sim_df.columns:
         return f"Film '{title}' tidak ditemukan dalam database."
 
     sim_scores = (
         cosine_sim_df[title]
-        .drop(title)                     # hilangkan film itu sendiri
+        .drop(title)
         .sort_values(ascending=False)
     )
     return sim_scores.head(top_n).index.tolist()
 
 
 def get_genres(title: str, movie_features: pd.DataFrame) -> str:
-    """
-    Mengembalikan string genre dari sebuah film, dipisahkan koma.
-    Mengembalikan 'Unknown' jika tidak ada genre, '-' jika film tidak ada.
-    """
+    """Mengembalikan daftar genre film yang dipisahkan koma."""
     if title not in movie_features.index:
         return "-"
     row    = movie_features.loc[title]
@@ -323,9 +239,7 @@ def get_genres(title: str, movie_features: pd.DataFrame) -> str:
     return ', '.join(genres) if genres else "Unknown"
 
 
-# ══════════════════════════════════════════════
-# BAGIAN 5 — EVALUASI
-# ══════════════════════════════════════════════
+# --- 5. Evaluasi ---
 
 def evaluate_recommendation(
     title: str,
@@ -333,13 +247,7 @@ def evaluate_recommendation(
     movie_features: pd.DataFrame,
     top_n: int = 5
 ) -> pd.DataFrame | str:
-    """
-    Mengevaluasi rekomendasi secara kualitatif: menampilkan genre dari film
-    referensi dan film-film yang direkomendasikan untuk diverifikasi.
-
-    Returns:
-        DataFrame berisi title, genre_list, dan similarity_score.
-    """
+    """Mengevaluasi rekomendasi secara kualitatif berdasarkan perbandingan genre."""
     results = recommend_movies(title, cosine_sim_df, top_n)
     if isinstance(results, str):
         return results
@@ -364,9 +272,7 @@ def get_random_sample_titles(movie_features: pd.DataFrame, n: int = 5) -> list[s
     return random.sample(movie_features.index.tolist(), n)
 
 
-# ══════════════════════════════════════════════
-# BAGIAN 6 — VISUALISASI
-# ══════════════════════════════════════════════
+# --- 6. Visualisasi ---
 
 def plot_rating_distribution(ratings: pd.DataFrame) -> plt.Figure:
     """Bar chart distribusi rating (1–5)."""
@@ -396,10 +302,7 @@ def plot_top_movie_rating_dist(
     title: str,
     df: pd.DataFrame
 ) -> plt.Figure | None:
-    """
-    Bar chart distribusi rating untuk satu film tertentu.
-    Menampilkan jumlah setiap nilai rating dan rata-rata rating.
-    """
+    """Bar chart distribusi rating untuk satu film tertentu."""
     subset = df[df['title'] == title]
     if subset.empty:
         return None
@@ -447,9 +350,7 @@ def plot_similarity_heatmap(
     return fig
 
 
-# ══════════════════════════════════════════════
-# ENTRY POINT (standalone / terminal)
-# ══════════════════════════════════════════════
+# --- Main Entry Point ---
 
 if __name__ == "__main__":
     print("=" * 55)
@@ -458,7 +359,7 @@ if __name__ == "__main__":
 
     print("\n[1/3] Memuat dataset...")
     ratings, movies, df, movie_features, cosine_sim_df = build_model()
-    print(f"  ✔ Dataset berhasil dimuat.")
+    print("  ✔ Dataset berhasil dimuat.")
     print(f"  • Total rating  : {len(ratings):,}")
     print(f"  • Total film    : {len(movies):,}")
     print(f"  • Total user    : {ratings['user_id'].nunique():,}")
